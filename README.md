@@ -3,7 +3,7 @@
   <img src="https://github.com/user-attachments/assets/5b2ab201-5926-46fa-b0a2-07a6f406ab6d" alt="Banner" />
 </p>
 <h1 align="center">
-    Terraform Azure Module Template
+    Terraform Azure GitHub Hosted Compute Networking
 </h1>
 
 <p align="center" style="font-size: 1.2rem;">
@@ -13,7 +13,7 @@
 <p align="center">
 
 <a href="https://www.terraform.io">
-  <img src="https://img.shields.io/badge/Terraform-v0.13-green" alt="Terraform">
+  <img src="https://img.shields.io/badge/Terraform-v1.10.0-green" alt="Terraform">
 </a>
 <a href="LICENSE.md">
   <img src="https://img.shields.io/badge/License-APACHE-blue.svg" alt="Licence">
@@ -22,104 +22,374 @@
   <img src="https://img.shields.io/badge/Changelog-blue" alt="Changelog">
 </a>
 
-
-</p>
-<p align="center">
-
-<a href='https://facebook.com/sharer/sharer.php?u=https://github.com/clouddrove/terraform-module-template'>
-  <img title="Share on Facebook" src="https://user-images.githubusercontent.com/50652676/62817743-4f64cb80-bb59-11e9-90c7-b057252ded50.png" />
-</a>
-<a href='https://www.instagram.com/cloud_drove?igsh=cHJqaDY3bGtnYmh3' title="Follow On Instagram">
-  <img src="https://github.com/gauravghongde/social-icons/blob/master/SVG/Color/Instagram.svg" width="23" height="23" />
-</a>
-<a href='https://www.linkedin.com/shareArticle?mini=true&title=Terraform+Module+Template&url=https://github.com/clouddrove/terraform-module-template'>
-  <img title="Share on LinkedIn" src="https://user-images.githubusercontent.com/50652676/62817742-4e339e80-bb59-11e9-87b9-a1f68cae1049.png" />
-</a>
-<a href='https://twitter.com/intent/tweet/?text=Terraform+Module+Template&url=https://github.com/clouddrove/terraform-module-template'>
-  <img title="Share on Twitter" src="https://user-images.githubusercontent.com/50652676/62817740-4c69db00-bb59-11e9-8a79-3580fbbf6d5c.png" />
-</a>
-
 </p>
 <hr>
-
 
 We are a group of DevOps engineers and architects collaborating to build standardized, scalable, and secure infrastructure in today's ever-evolving digital landscape. Rooted in a strong belief in automation and modular design—much like microservices—we focus on decomposing infrastructure into smaller, reusable components such as databases, clusters, and more. These components are built to follow industry best practices and are easy to manage, scale, and secure.
 
 This repository is part of the **terraform-az-modules** organization and provides open-source, reusable Terraform modules. It includes practical examples and workflows to help users quickly understand, implement, and improve their infrastructure with minimal configuration and high maintainability.
 
+---
 
-## Prerequisites and Providers
+## Overview
 
+This module provisions the Azure-side infrastructure required to enable **GitHub Hosted Compute Networking** – the feature that allows GitHub-hosted runners (Organization or Enterprise) to execute jobs through a customer-controlled Azure Virtual Network.
 
-This table contains both Prerequisites and Providers:
+It deploys the resources that GitHub requires to attach hosted runners to a private Azure network, then registers that network with GitHub via the `GitHub.Network/networkSettings` Azure resource type (`apiVersion = 2024-04-02`).
 
+Optionally, the module can deploy a small Linux VM in a separate Virtual Network as a sidecar runner / jumpbox / validation host.
 
-| Description   | Name                                       | Version   |
-|:-------------:|:-------------------------------------------:|:---------:|
-| **Prerequisite** | [Terraform](https://learn.hashicorp.com/terraform/getting-started/install.html) | >= 1.6.6 |
-| **Provider** | [azure](https://azure.microsoft.com/) | >= 3.90.0 |
+The module creates:
 
+* Azure Resource Group
+* Network Security Group
+* Virtual Network
+* Subnet delegated to `GitHub.Network/networkSettings`
+* NSG association for the delegated subnet
+* `GitHub.Network/networkSettings` resource (registers the subnet with GitHub)
+* Optional Linux Runner VM (separate VNet, subnet, public IP, NIC, VM)
 
+---
 
+## Architecture
 
+```
+                          ┌──────────────────────────────────────────┐
+                          │ Azure Subscription                       │
+                          │                                          │
+                          │   ┌──────────────────────────────────┐   │
+                          │   │ Resource Group                   │   │
+                          │   │                                  │   │
+                          │   │  ┌──────────────────────────┐    │   │
+                          │   │  │ Virtual Network          │    │   │
+                          │   │  │   ┌──────────────────┐   │    │   │
+                          │   │  │   │ Delegated Subnet │◀──┼────┼───┼────┐
+                          │   │  │   │ (GitHub.Network/ │   │    │   │    │
+                          │   │  │   │  networkSettings)│   │    │   │    │
+                          │   │  │   └──────────────────┘   │    │   │    │
+                          │   │  └──────────────────────────┘    │   │    │
+                          │   │              │ NSG association   │   │    │
+                          │   │  ┌──────────────────────────┐    │   │    │
+                          │   │  │ Network Security Group   │    │   │    │
+                          │   │  └──────────────────────────┘    │   │    │
+                          │   │                                  │   │    │
+                          │   │  ┌──────────────────────────┐    │   │    │
+                          │   │  │ GitHub.Network/          │    │   │    │
+                          │   │  │  networkSettings         │────┼────┼───▶│  GitHub Cloud
+                          │   │  │  (registers subnet w/    │    │   │    │  (Hosted Runners
+                          │   │  │   GitHub via businessId) │    │   │    │   bind to network)
+                          │   │  └──────────────────────────┘    │   │    │
+                          │   │                                  │   │    │
+                          │   │  ┌──────────────────────────┐    │   │    │
+                          │   │  │ (Optional) Runner VM     │    │   │    │
+                          │   │  │  • Separate VNet/Subnet  │    │   │    │
+                          │   │  │  • Public IP + NIC       │    │   │    │
+                          │   │  │  • Linux VM (Ubuntu)     │    │   │    │
+                          │   │  └──────────────────────────┘    │   │    │
+                          │   └──────────────────────────────────┘   │    │
+                          └──────────────────────────────────────────┘    │
+                                                                          │
+                                                                          ▼
+                                                       GitHub Org/Enterprise
+                                                       creates a runner group
+                                                       bound to `githubId`.
+```
+
+---
+
+## Prerequisites
+
+| Description       | Name                                                                          | Version    |
+| :---------------: | :---------------------------------------------------------------------------: | :--------: |
+| **Prerequisite**  | [Terraform](https://learn.hashicorp.com/terraform/getting-started/install.html) | `>= 1.10.0` |
+| **Provider**      | [azurerm](https://registry.terraform.io/providers/hashicorp/azurerm/latest)   | `>= 4.0`   |
+| **Provider**      | [azapi](https://registry.terraform.io/providers/Azure/azapi/latest)           | `>= 2.0`   |
+
+Before running the module you must have:
+
+1. An Azure Subscription with sufficient quota in the target region.
+2. The Azure resource provider `GitHub.Network` registered on the subscription:
+   ```bash
+   az provider register --namespace GitHub.Network
+   az provider show     --namespace GitHub.Network --query "registrationState"
+   ```
+3. A GitHub Organization (free / Team / Enterprise Cloud) **or** a GitHub Enterprise Cloud account.
+4. The **GitHub Organization or Enterprise database ID** (also called `businessId`).
+   * Organization: `gh api orgs/<ORG>/settings/billing/actions | jq -r '.organization_id'`
+     or via the GraphQL API: `query { organization(login: "<ORG>") { databaseId } }`.
+   * Enterprise: `query { enterprise(slug: "<ENTERPRISE>") { databaseId } }`.
+5. The principal running Terraform must have permission to create:
+   * `Microsoft.Resources/resourceGroups`
+   * `Microsoft.Network/virtualNetworks`, `subnets`, `networkSecurityGroups`
+   * `GitHub.Network/networkSettings`
+
+---
+
+## Azure CLI Deployment Alternative
+
+The Terraform module is functionally equivalent to the following Azure CLI workflow. Use this only when you cannot run Terraform:
+
+```bash
+LOCATION="eastus"
+RG="rg-github-runner-dev"
+VNET="vnet-github-runner-dev"
+SUBNET="snet-github-runner"
+NSG="nsg-github-runner-dev"
+NS_NAME="github-runner-network-settings"
+BUSINESS_ID="<organization or enterprise databaseId>"
+
+az group create --name "$RG" --location "$LOCATION"
+
+az network nsg create \
+  --resource-group "$RG" --name "$NSG" --location "$LOCATION"
+
+az network vnet create \
+  --resource-group "$RG" --name "$VNET" \
+  --address-prefix 10.10.0.0/16 --location "$LOCATION"
+
+az network vnet subnet create \
+  --resource-group "$RG" --vnet-name "$VNET" --name "$SUBNET" \
+  --address-prefixes 10.10.1.0/24 \
+  --delegations GitHub.Network/networkSettings
+
+az network vnet subnet update \
+  --resource-group "$RG" --vnet-name "$VNET" --name "$SUBNET" \
+  --network-security-group "$NSG"
+
+SUBNET_ID=$(az network vnet subnet show \
+  --resource-group "$RG" --vnet-name "$VNET" --name "$SUBNET" --query id -o tsv)
+
+az resource create \
+  --resource-group "$RG" \
+  --name "$NS_NAME" \
+  --resource-type "GitHub.Network/networkSettings" \
+  --api-version "2024-04-02" \
+  --location "$LOCATION" \
+  --properties "{\"businessId\":\"$BUSINESS_ID\",\"subnetId\":\"$SUBNET_ID\"}"
+```
+
+Capture the value of `properties.githubId` from the last command – that is the identifier you register in GitHub.
+
+---
+
+## Terraform Deployment
+
+```hcl
+module "github_pvt_runner" {
+  source  = "terraform-az-modules/github-pvt-runner/azurerm"
+  version = "1.0.0"
+
+  subscription_id     = "00000000-0000-0000-0000-000000000000"
+  location            = "eastus"
+  resource_group_name = "rg-github-runner-dev"
+
+  vnet_name          = "vnet-github-runner-dev"
+  vnet_address_space = ["10.10.0.0/16"]
+
+  runner_subnet_name     = "snet-github-runner"
+  runner_subnet_prefixes = ["10.10.1.0/24"]
+
+  nsg_name = "nsg-github-runner-dev"
+
+  network_settings_name        = "github-runner-network-settings"
+  network_settings_api_version = "2024-04-02"
+  github_database_id           = "12345678"
+
+  # Optional Runner VM
+  enable_runner_vm             = false
+  runner_vm_name               = "vm-github-runner-dev"
+  runner_vm_admin_username     = "azureuser"
+  runner_vm_admin_password     = var.runner_vm_admin_password
+  runner_vm_vnet_address_space = ["10.20.0.0/16"]
+  runner_vm_subnet_name        = "snet-runner-vm"
+  runner_vm_subnet_prefixes    = ["10.20.1.0/24"]
+}
+```
+
+Deploy:
+
+```bash
+terraform init
+terraform plan  -out tfplan
+terraform apply tfplan
+```
+
+A working end-to-end example lives in [`examples/complete/`](./examples/complete).
+
+---
+
+## Organization-Level Setup
+
+Use these steps when wiring the network settings to a **GitHub Organization** (Free / Team / Enterprise Cloud Org-level).
+
+1. Resolve the organization `databaseId` (this is `businessId` for the Azure resource):
+   ```bash
+   gh api graphql -f query='
+     query($login:String!) {
+       organization(login:$login) { databaseId login }
+     }' -F login="my-org"
+   ```
+2. Pass the value to the module as `github_database_id`.
+3. After `terraform apply`, capture the output `network_settings_github_id`:
+   ```bash
+   terraform output -raw network_settings_github_id
+   ```
+4. In GitHub, navigate to **Organization → Settings → Actions → Hosted compute networking → Add a network configuration**, paste the `githubId` value and save.
+5. Continue with [Runner Group Configuration](#runner-group-configuration).
+
+---
+
+## Enterprise-Level Setup
+
+Use these steps when wiring the network settings to a **GitHub Enterprise Cloud** account.
+
+1. Resolve the enterprise `databaseId`:
+   ```bash
+   gh api graphql -f query='
+     query($slug:String!) {
+       enterprise(slug:$slug) { databaseId slug }
+     }' -F slug="my-enterprise"
+   ```
+2. Pass that value to the module as `github_database_id`.
+3. After `terraform apply`, capture `network_settings_github_id` and register it under **Enterprise → Settings → Hosted compute networking → Add a network configuration**.
+4. Continue with [Runner Group Configuration](#runner-group-configuration).
+
+> **Note:** A given `GitHub.Network/networkSettings` resource is bound to a single GitHub `businessId`. Org-level and Enterprise-level network configurations are distinct.
+
+---
+
+## Runner Group Configuration
+
+After the network configuration is registered in GitHub:
+
+1. Go to **Settings → Actions → Runner groups → New runner group**.
+2. Choose visibility (selected repos, all repos, etc.).
+3. Under **Network configuration**, select the entry that matches the `network_settings_github_id` you registered.
+4. Save the runner group.
+
+Repository workflows can now target this runner group by using a runner label assigned in the next step.
+
+---
+
+## GitHub Hosted Runner Creation
+
+1. Go to **Settings → Actions → Runners → New GitHub-hosted runner**.
+2. Configure:
+   * Name (e.g. `azure-linux-runner`)
+   * Platform / image (Ubuntu, Windows, etc.)
+   * Size / hardware
+   * Runner group: the one created in the previous section
+   * Network configuration: the configuration backed by this module
+3. Use the runner in workflows:
+   ```yaml
+   jobs:
+     build:
+       runs-on:
+         group: azure-private-runners
+         labels: azure-linux-runner
+   ```
+
+The runner job will execute on a GitHub-hosted VM attached to the **delegated subnet** provisioned by this module.
+
+---
+
+## Outputs
+
+| Name                           | Description                                                                                          |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `network_settings_github_id`   | The GitHub identifier (`githubId`) returned by Azure. Register this value in GitHub.                 |
+| `network_settings_resource_id` | The Azure Resource ID of the `GitHub.Network/networkSettings` resource.                              |
+| `resource_group_name`          | The Resource Group hosting the GitHub Hosted Compute Networking resources.                           |
+| `vnet_name`                    | The Virtual Network that hosts the delegated GitHub runner subnet.                                   |
+| `runner_subnet_id`             | The Azure Resource ID of the subnet delegated to `GitHub.Network/networkSettings`.                   |
+| `runner_vm_id`                 | The Azure Resource ID of the optional Runner VM. `null` when `enable_runner_vm = false`.             |
+| `runner_vm_public_ip`          | The public IP address of the optional Runner VM. `null` when `enable_runner_vm = false`.             |
+| `runner_vm_subnet_id`          | The Azure Resource ID of the optional Runner VM subnet. `null` when `enable_runner_vm = false`.      |
+| `runner_vm_vnet_name`          | The name of the Virtual Network created for the optional Runner VM. `null` when disabled.            |
+
+---
+
+## Validation
+
+After `terraform apply`, validate the deployment:
+
+1. **Subnet delegation:**
+   ```bash
+   az network vnet subnet show \
+     -g "$(terraform output -raw resource_group_name)" \
+     --vnet-name "$(terraform output -raw vnet_name)" \
+     -n snet-github-runner --query delegations
+   ```
+   Expect a delegation entry for `GitHub.Network/networkSettings`.
+
+2. **NSG association:**
+   ```bash
+   az network vnet subnet show \
+     -g "$(terraform output -raw resource_group_name)" \
+     --vnet-name "$(terraform output -raw vnet_name)" \
+     -n snet-github-runner --query networkSecurityGroup.id
+   ```
+
+3. **GitHub Network Settings ID:**
+   ```bash
+   terraform output -raw network_settings_github_id
+   ```
+   This is the value that must appear in GitHub's **Hosted compute networking** dashboard.
+
+4. **Runner VM (when enabled):**
+   ```bash
+   terraform output -raw runner_vm_public_ip
+   ```
+
+---
+
+## Troubleshooting
+
+| Symptom                                                                                                  | Likely Cause / Fix                                                                                                                                                                            |
+| -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Code="SubscriptionNotRegistered"` for `GitHub.Network`                                                  | Register the provider: `az provider register --namespace GitHub.Network` and re-run.                                                                                                          |
+| `Code="DelegationServiceNotSupportedInRegion"` when creating the subnet                                  | The selected region does not yet support `GitHub.Network/networkSettings`. Pick a supported region (eastus, eastus2, westus2, westus3, northeurope, westeurope, etc.).                        |
+| `Code="InvalidBusinessId"` from the network settings resource                                            | The `github_database_id` does not match a GitHub Org / Enterprise. Double-check the GraphQL `databaseId` value.                                                                               |
+| The network configuration is created in Azure but not visible in GitHub                                  | Confirm you are looking at the correct level (Org vs. Enterprise). The `businessId` must come from the *same* level you're configuring in GitHub.                                             |
+| `Code="SubnetIsFull"` later when GitHub schedules runners                                                 | Expand `runner_subnet_prefixes` to a larger CIDR. Hosted runners consume one IP each.                                                                                                          |
+| `terraform apply` fails on the optional Runner VM with `precondition failed`                             | When `enable_runner_vm = true` you must also set `runner_vm_name`, `runner_vm_admin_username`, `runner_vm_admin_password`, `runner_vm_vnet_address_space`, `runner_vm_subnet_name`, and `runner_vm_subnet_prefixes`. |
+| `Error: Provider configuration not present` for `azapi`                                                   | The root module must declare both `azurerm` and `azapi` providers. See the example `examples/complete/versions.tf`.                                                                          |
+
+---
 
 ## Examples
 
-**IMPORTANT:** Since the master branch used in source varies based on new modifications, we recommend using the [release versions](https://github.com/terraform-az-modules/terraform-module-template/releases).
+**IMPORTANT:** Since the master branch used in source varies based on new modifications, we recommend using the [release versions](https://github.com/terraform-az-modules/terraform-az-github-pvt-runner/releases).
 
-📌 For additional usage examples, check the complete list under [`examples/`](./examples) directory.
+For additional usage examples, check the complete list under [`examples/`](./examples) directory.
 
+---
 
-
-## Inputs and Outputs
-
-### Inputs
-
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
-| label_order | Label order, e.g. `name`,`application`,`centralus`. | `list(any)` | <pre>["name","environment",  "location"]</pre> | no |
-
-### Outputs
-
-| Name | Description |
-|------|-------------|
-| label_order | Label order, e.g. `name`,`application`,`centralus`. |
-
-
-
-<!-- 
 ## Module Dependencies
 
 This module has dependencies on:
 
 - [Labels Module](https://github.com/terraform-az-modules/terraform-azure-tags): Provides resource tagging.
- -->
 
-
-## Module Dependencies
-
-This module has dependencies on:
-- [Labels Module](https://github.com/terraform-az-modules/terraform-azure-tags): Provides resource tagging.
-
+---
 
 ## 📑 Changelog
 
 Refer [here](CHANGELOG.md).
 
-
-
+---
 
 ## ✨ Contributors
 
-Big thanks to our contributors for elevating our project with their dedication and expertise! But, we do not wish to stop there, would like to invite contributions from the community in improving these projects and making them more versatile for better reach. Remember, every bit of contribution is immensely valuable, as, together, we are moving in only 1 direction, i.e. forward. 
+Big thanks to our contributors for elevating our project with their dedication and expertise! But, we do not wish to stop there, would like to invite contributions from the community in improving these projects and making them more versatile for better reach. Remember, every bit of contribution is immensely valuable, as, together, we are moving in only 1 direction, i.e. forward.
 
-<a href="https://github.com/terraform-az-modules/terraform-azure-module-template/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=terraform-az-modules/terraform-azure-module-template&max" />
+<a href="https://github.com/terraform-az-modules/terraform-az-github-pvt-runner/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=terraform-az-modules/terraform-az-github-pvt-runner&max" />
 </a>
 <br>
 <br>
 
- If you're considering contributing to our project, here are a few quick guidelines that we have been following (Got a suggestion? We are all ears!):
+If you're considering contributing to our project, here are a few quick guidelines that we have been following (Got a suggestion? We are all ears!):
 
 - **Fork the Repository:** Create a new branch for your feature or bug fix.
 - **Coding Standards:** You know the drill.
@@ -127,12 +397,15 @@ Big thanks to our contributors for elevating our project with their dedication a
 - **Thorough Testing:** Test your changes thoroughly before submitting a pull request.
 - **Documentation Updates:** Include relevant documentation updates if your changes impact it.
 
+---
 
-## Feedback 
-Spot a bug or have thoughts to share with us? Let's squash it together! Log it in our [issue tracker](https://github.com/terraform-az-modules/terraform-azure-module-template/issues), feel free to drop us an email at [hello@clouddrove.com](hello@clouddrove.com)).
+## Feedback
 
-Show some love with a ★ on [our GitHub](https://github.com/terraform-az-modules/terraform-azure-module-template)!  if our work has brightened your day! – your feedback fuels our journey!
+Spot a bug or have thoughts to share with us? Let's squash it together! Log it in our [issue tracker](https://github.com/terraform-az-modules/terraform-az-github-pvt-runner/issues), feel free to drop us an email at [hello@clouddrove.com](hello@clouddrove.com).
 
+Show some love with a ★ on [our GitHub](https://github.com/terraform-az-modules/terraform-az-github-pvt-runner) if our work has brightened your day! – your feedback fuels our journey!
+
+---
 
 ## :rocket: Our Accomplishment
 
@@ -140,8 +413,10 @@ We have [*50+ Azure Terraform modules*][terraform_modules] 🙌. You could consi
 
 - [Terraform Module Registry:](https://registry.terraform.io/namespaces/clouddrove) Discover our Terraform modules here.
 
+---
 
 ## Tap into our capabilities
+
 We provide a platform for organizations to engage with experienced, top-tier DevOps and Cloud professionals. Tap into our pool of certified engineers and architects to elevate your DevOps and Cloud solutions.
 
 At **Azure Terraform Modules Organisation**, we have extensive experience in designing, building, and migrating environments; securing infrastructure; consulting; monitoring; optimizing; automating; and maintaining complex, large-scale modern systems. With a strong client presence across American and European regions, our certified experts deliver robust and scalable cloud solutions.

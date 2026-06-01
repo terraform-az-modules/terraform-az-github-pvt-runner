@@ -4,19 +4,15 @@
 # Run `make readme` to rebuild the `README.md`
 #
 
-# Name of this project
-name : Terraform Azure Module Template
+name: Terraform Azure GitHub Hosted Compute Networking
 
-# License of this project
 license: "APACHE"
 
-# Canonical GitHub repo
-github_repo: terraform-az-modules/terraform-module-template
+github_repo: terraform-az-modules/terraform-az-github-pvt-runner
 
-# Badges to display
 badges:
   - name: "Terraform"
-    image: "https://img.shields.io/badge/Terraform-v0.13-green"
+    image: "https://img.shields.io/badge/Terraform-v1.10.0-green"
     url: "https://www.terraform.io"
   - name: "Licence"
     image: "https://img.shields.io/badge/License-APACHE-blue.svg"
@@ -25,25 +21,46 @@ badges:
     image: "https://img.shields.io/badge/Changelog-blue"
     url: "CHANGELOG.md"
 
-# Prerequesties to display
-prerequesties:
+prerequisites:
   - name: Terraform
     url: https://learn.hashicorp.com/terraform/getting-started/install.html
-    version: ">= 1.6.6"
+    version: ">= 1.10.0"
 
 providers:
-  - name: azure
-    url: https://azure.microsoft.com/
-    version: ">= 3.116.0"
+  - name: azurerm
+    url: https://registry.terraform.io/providers/hashicorp/azurerm/latest
+    version: ">= 4.0"
+  - name: azapi
+    url: https://registry.terraform.io/providers/Azure/azapi/latest
+    version: ">= 2.0"
 
-#  description of this project
 description: |-
-  Terraform Azure Module Template to create new modules using this as baseline
+  Terraform module that provisions Azure infrastructure for GitHub Hosted Compute
+  Networking. It creates the Resource Group, Virtual Network, Network Security
+  Group, delegated subnet (`GitHub.Network/networkSettings`) and the GitHub
+  Network Settings resource registered with GitHub. Optionally deploys a Linux
+  Runner VM for validation or self-hosted scenarios.
 
-# How to use this project
-# How to use this project
 usage: |-
-  Here are some examples of how you can use this module in your inventory structure:
+  ### Example
+
   ```hcl
-    locals {}
-    ```
+  module "github_pvt_runner" {
+    source  = "terraform-az-modules/github-pvt-runner/azurerm"
+    version = "1.0.0"
+
+    location            = "eastus"
+    resource_group_name = "rg-github-runner-dev"
+
+    vnet_name          = "vnet-github-runner-dev"
+    vnet_address_space = ["10.10.0.0/16"]
+
+    runner_subnet_name     = "snet-github-runner"
+    runner_subnet_prefixes = ["10.10.1.0/24"]
+
+    nsg_name = "nsg-github-runner-dev"
+
+    network_settings_name = "github-runner-network-settings"
+    github_database_id    = "12345678"
+  }
+  ```
